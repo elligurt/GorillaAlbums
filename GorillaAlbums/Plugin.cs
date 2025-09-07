@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading.Tasks;
 using BepInEx;
 using GorillaAlbums.Tools;
@@ -13,16 +13,21 @@ namespace GorillaAlbums
         public static Plugin Instance { get; private set; }
 
         private GameObject _shelfPrefab;
+        private bool _initialized = false;
 
-        private void Awake()
+        private void Start()
         {
             Instance = this;
-            Utilla.Events.GameInitialized += OnGameInitialized;
+            GorillaTagger.OnPlayerSpawned(OnPlayerSpawned);
         }
 
-        private async void OnGameInitialized(object sender, EventArgs e)
+        private void OnPlayerSpawned()
         {
-            await SetupShelves();
+            if (_initialized)
+                return;
+
+            _initialized = true;
+            _ = SetupShelves();
         }
 
         private async Task SetupShelves()
@@ -46,8 +51,7 @@ namespace GorillaAlbums
 
                 ImageManager.ApplyImagesToPhotos(shelfInstance);
 
-                Behaviours.ErrorManager.CheckAndShowError(shelfInstance);
-
+                ErrorManager.CheckAndShowError(shelfInstance);
             }
             catch (Exception ex)
             {
