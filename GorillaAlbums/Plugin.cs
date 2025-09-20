@@ -1,9 +1,9 @@
 using System;
 using System.Threading.Tasks;
 using BepInEx;
+using GorillaAlbums.Behaviours;
 using GorillaAlbums.Tools;
 using UnityEngine;
-using GorillaAlbums.Behaviours;
 
 namespace GorillaAlbums
 {
@@ -11,9 +11,8 @@ namespace GorillaAlbums
     public class Plugin : BaseUnityPlugin
     {
         public static Plugin Instance { get; private set; }
-
         private GameObject _shelfPrefab;
-        private bool _initialized = false;
+        private bool _initialized;
 
         private void Start()
         {
@@ -23,35 +22,38 @@ namespace GorillaAlbums
 
         private void OnPlayerSpawned()
         {
-            if (_initialized)
-                return;
-
+            if (_initialized) return;
             _initialized = true;
-            _ = SetupShelves();
+            _ = SetupObjects();
         }
 
-        private async Task SetupShelves()
+        private async Task SetupObjects()
         {
             try
             {
                 ImageManager.CreateImageFolder();
-                ImageManager.LoadAllImages();
+                ImageManager.LoadAllAlbums();
 
                 _shelfPrefab = await AssetLoader.LoadAsset<GameObject>("GorillaAlbums");
                 if (_shelfPrefab == null)
                 {
-                    Debug.LogError("[GorillaAlbums] failed to load bundle");
+                    Debug.LogError("[GorillaAlbums] Failed to load shelf bundle");
                     return;
                 }
 
-                GameObject shelfInstance = Instantiate(_shelfPrefab);
+                var shelfInstance = Instantiate(_shelfPrefab);
                 shelfInstance.SetActive(true);
                 shelfInstance.transform.position = new Vector3(-64.7606f, 12.1637f, -84.5819f);
                 shelfInstance.transform.rotation = Quaternion.Euler(0f, 271.3724f, 0f);
 
-                ImageManager.ApplyImagesToPhotos(shelfInstance);
 
+                ImageManager.ApplyImagesToRecords(shelfInstance);
                 ErrorManager.CheckAndShowError(shelfInstance);
+
+                if (ErrorManager.ShouldPlayMusic)
+                {
+                    shelfInstance.AddComponent<MusicUpdater>();
+                }
             }
             catch (Exception ex)
             {
