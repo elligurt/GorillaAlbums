@@ -1,127 +1,160 @@
-﻿using System;
+using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using UnityEngine;
 using BepInEx;
+using UnityEngine;
 
 namespace GorillaAlbums.Behaviours
 {
-    //this way of doing it is horrible, but it works for now, if you can improve it please do..
     public static class ImageManager
     {
-        private static Texture2D[] loadedImages;
-        private static string imageFolderPath;
+        public class AlbumContent
+        {
+            public Texture2D Cover;
+            public AudioClip Track;
+            public string Name;
+        }
+
+        private static string rootFolder;
         private static string lastDisplayFilePath;
+
+        public static List<AlbumContent> Albums { get; private set; } = new List<AlbumContent>();
+        public static bool HasError { get; private set; }
+
+        private static List<AlbumContent> shuffled = new List<AlbumContent>();
+        private static int shuffleIndex = 0;
 
         public static void CreateImageFolder()
         {
-            imageFolderPath = Path.Combine(Paths.PluginPath, "AlbumCovers");
-            if (!Directory.Exists(imageFolderPath))
-                Directory.CreateDirectory(imageFolderPath);
+            rootFolder = Path.Combine(Paths.PluginPath, "AlbumCovers");
+            Directory.CreateDirectory(rootFolder);
 
             string logFolder = Path.Combine(Paths.BepInExRootPath, "GorillaAlbums");
-            if (!Directory.Exists(logFolder))
-                Directory.CreateDirectory(logFolder);
-
+            Directory.CreateDirectory(logFolder);
             lastDisplayFilePath = Path.Combine(logFolder, "LastDisplay.txt");
+
+            for (int i = 1; i <= 4; i++)
+            {
+                string subFolder = Path.Combine(rootFolder, $"Album{i}");
+                Directory.CreateDirectory(subFolder);
+            }
         }
 
-        public static void LoadAllImages()
+        public static void LoadAllAlbums()
         {
-            string[] files = Directory.GetFiles(imageFolderPath, "*.*")
-                .Where(s => s.EndsWith(".png", StringComparison.OrdinalIgnoreCase)
-                            || s.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase))
-                .ToArray();
+            Albums.Clear();
+            HasError = false;
 
-            loadedImages = new Texture2D[files.Length];
+            if (!Directory.Exists(rootFolder)) return;
 
-            for (int i = 0; i < files.Length; i++)
+            var subDirs = Directory.GetDirectories(rootFolder).OrderBy(d => d).ToArray();
+
+            foreach (var subDir in subDirs)
             {
-                byte[] fileData = File.ReadAllBytes(files[i]);
+                var images = Directory.GetFiles(subDir, "*.*")
+                    .Where(f => f.EndsWith(".png", StringComparison.OrdinalIgnoreCase) ||
+                                f.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase))
+                    .ToArray();
+
+                var audioFiles = Directory.GetFiles(subDir, "*.*")
+                    .Where(f => f.EndsWith(".wav", StringComparison.OrdinalIgnoreCase) ||
+                                f.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase) ||
+                                f.EndsWith(".ogg", StringComparison.OrdinalIgnoreCase))
+                    .ToArray();
+
+                if (images.Length != 1 || audioFiles.Length != 1)
+                {
+                    Debug.LogWarning($"[GorillaAlbums] Folder {Path.GetFileName(subDir)} must contain exactly 1 image and 1 audio.");
+                    HasError = true;
+                    continue;
+                }
+
                 Texture2D tex = new Texture2D(2, 2);
-                tex.LoadImage(fileData);
-                tex.name = Path.GetFileNameWithoutExtension(files[i]);
-                loadedImages[i] = tex;
+                tex.LoadImage(File.ReadAllBytes(images[0]));
+                tex.name = Path.GetFileNameWithoutExtension(images[0]);
+
+                AudioClip clip = MusicManager.LoadAudioClip(audioFiles[0]);
+                if (clip == null)
+                {
+                    Debug.LogWarning($"[GorillaAlbums] Failed to load audio");
+                    HasError = true;
+                    continue;
+                }
+
+                Albums.Add(new AlbumContent
+                {
+                    Cover = tex,
+                    Track = clip,
+                    Name = Path.GetFileNameWithoutExtension(audioFiles[0])
+                });
             }
+
+            if (Albums.Count == 4 && !HasError)
+                ShuffleAlbums();
+            else
+                HasError = true;
         }
 
-        public static void ApplyImagesToPhotos(GameObject parentObject)
+        private static void ShuffleAlbums()
         {
-            if (parentObject == null)
-                return;
+            string lastPlayedName = null;
+            if (File.Exists(lastDisplayFilePath))
+                lastPlayedName = File.ReadAllText(lastDisplayFilePath);
 
-            if (loadedImages == null || loadedImages.Length < 4)
+            shuffled = Albums.OrderBy(a => UnityEngine.Random.value).ToList();
+
+            if (!string.IsNullOrEmpty(lastPlayedName))
             {
-                ErrorManager.CheckAndShowError(parentObject);
-                return;
-            }
-
-            string[] photoNames = { "Record1", "Record2", "Record3", "Record4" };
-            Texture2D[] assignedTextures = new Texture2D[4];
-
-            for (int i = 0; i < photoNames.Length; i++)
-            {
-                Transform photoTransform = FindDeepChild(parentObject.transform, photoNames[i]);
-                if (photoTransform != null)
+                var lastAlbum = shuffled.FirstOrDefault(a => a.Name == lastPlayedName);
+                if (lastAlbum != null)
                 {
-                    Renderer rend = photoTransform.GetComponentInChildren<Renderer>();
-                    if (rend != null)
-                    {
-                        Texture2D tex = loadedImages[i % loadedImages.Length];
-                        rend.material.mainTexture = tex;
-                        assignedTextures[i] = tex;
-                    }
+                    shuffled.Remove(lastAlbum);
+                    shuffled.Add(lastAlbum);
                 }
             }
 
- 
-            Transform displayTransform = FindDeepChild(parentObject.transform, "RecordDisplayArt");
-            if (displayTransform != null)
+            shuffleIndex = 0;
+        }
+
+        public static AlbumContent PickNextAlbum()
+        {
+            if (Albums.Count == 0) return null;
+
+            if (shuffleIndex >= shuffled.Count)
+                ShuffleAlbums();
+
+            var chosen = shuffled[shuffleIndex++];
+            if (!string.IsNullOrEmpty(chosen.Name))
+                File.WriteAllText(lastDisplayFilePath, chosen.Name);
+
+            return chosen;
+        }
+
+        public static void ApplyImagesToRecords(GameObject parent)
+        {
+            if (parent == null || HasError || Albums.Count < 4) return;
+
+            string[] recordNames = { "Record1", "Record2", "Record3", "Record4" };
+            for (int i = 0; i < recordNames.Length; i++)
             {
-                Renderer displayRend = displayTransform.GetComponentInChildren<Renderer>();
-                if (displayRend != null)
-                {
-                    Texture2D lastTexture = null;
-                    if (File.Exists(lastDisplayFilePath))
-                    {
-                        string lastName = File.ReadAllText(lastDisplayFilePath);
-                        lastTexture = assignedTextures.FirstOrDefault(tex => tex.name == lastName);
-                    }
+                var t = parent.transform.FindDeepChild(recordNames[i]);
+                if (t == null) continue;
 
-                    Texture2D chosenTex;
-                    if (lastTexture != null && assignedTextures.Length > 1)
-                    {
-                        var options = assignedTextures.Where(tex => tex != lastTexture).ToArray();
-                        chosenTex = options[UnityEngine.Random.Range(0, options.Length)];
-                    }
-                    else
-                    {
-                        chosenTex = assignedTextures[UnityEngine.Random.Range(0, assignedTextures.Length)];
-                    }
+                var rend = t.GetComponentInChildren<Renderer>();
+                if (rend == null) continue;
 
-                    displayRend.material.mainTexture = chosenTex;
-
-                    if (!string.IsNullOrEmpty(chosenTex.name))
-                        File.WriteAllText(lastDisplayFilePath, chosenTex.name);
-                }
+                rend.material.mainTexture = Albums[i].Cover;
             }
         }
 
-        public static int GetLoadedImageCount()
-        {
-            return loadedImages != null ? loadedImages.Length : 0;
-        }
-
-        private static Transform FindDeepChild(Transform parent, string name)
+        public static Transform FindDeepChild(this Transform parent, string name)
         {
             foreach (Transform child in parent)
             {
-                if (child.name == name)
-                    return child;
-
-                Transform result = FindDeepChild(child, name);
-                if (result != null)
-                    return result;
+                if (child.name == name) return child;
+                var result = child.FindDeepChild(name);
+                if (result != null) return result;
             }
             return null;
         }
