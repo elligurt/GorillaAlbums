@@ -23,7 +23,7 @@ GorillaAlbums is a mod that lets you play music and display your favorite albums
 
 There currently **is not** any way to pause, if you have any suggestions on how you want the mod to pause please join this [discord](https://discord.gg/ckqJzzUuNc)
 
-**Supported image and audio types**
+# Supported image and audio types
 
 **Images:** png. and jpg.
 
