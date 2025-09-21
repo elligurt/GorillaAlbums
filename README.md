@@ -31,8 +31,11 @@ There currently **is not** any way to pause, if you have any suggestions on how 
 
 **if you dont use these supported image types, the mod will not work.**
 
+# Controls
+M = Pause and Unpause
 
-**How to download songs from websites**
+
+# How to download songs from websites
 
 I AM **not** responsible for any of these songs you obtain or **what the website does to you**. YOU HAVE BEEN WARNED
 
